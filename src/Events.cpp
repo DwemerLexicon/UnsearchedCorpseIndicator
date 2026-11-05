@@ -4,10 +4,25 @@
 #include "State.h"
 
 namespace UCI {
-    void MarkCorpseSearched(RE::FormID formID) {
-        g_searched.insert(formID);
-        g_deathTimes.erase(formID);
-        g_playerKilled.erase(formID);
+    namespace {
+        // The player, a follower, or something the player commands (summons, reanimated thralls).
+        bool IsPlayerOrAlly(RE::TESObjectREFR* a_killer) {
+            if (!a_killer) return false;
+            if (a_killer->IsPlayerRef()) return true;
+
+            const auto* actor = a_killer->As<RE::Actor>();
+            if (!actor) return false;
+            if (actor->IsPlayerTeammate()) return true;
+
+            const auto commander = actor->GetCommandingActor();
+            return commander && commander->IsPlayerRef();
+        }
+
+        // Typing in the console or a menu shouldn't toggle the icons.
+        bool IsInMenu() {
+            auto* ui = RE::UI::GetSingleton();
+            return !ui || ui->GameIsPaused() || ui->IsMenuOpen(RE::Console::MENU_NAME);
+        }
     }
 
     class InputSink : public RE::BSTEventSink<RE::InputEvent*> {
@@ -28,17 +43,31 @@ namespace UCI {
                 if (event->GetDevice() != RE::INPUT_DEVICE::kKeyboard)
                     continue;
 
-                auto* button = event->AsButtonEvent();
-                if (!button || !button->IsDown())
+                const auto* button = event->AsButtonEvent();
+                if (!button)
                     continue;
 
-                if (button->GetIDCode() == Settings::toggleKey) {
-                    g_iconsEnabled = !g_iconsEnabled;
+                const auto key = button->GetIDCode();
+                if (Settings::toggleModifier != 0 && key == Settings::toggleModifier) {
+                    _modifierHeld = button->IsPressed();
+                    continue;
                 }
+
+                if (key != Settings::toggleKey || !button->IsDown())
+                    continue;
+                if (Settings::toggleModifier != 0 && !_modifierHeld)
+                    continue;
+                if (IsInMenu())
+                    continue;
+
+                State::ToggleIcons();
             }
 
             return RE::BSEventNotifyControl::kContinue;
         }
+
+    private:
+        bool _modifierHeld{ false };
     };
 
     class DeathSink : public RE::BSTEventSink<RE::TESDeathEvent> {
@@ -55,17 +84,10 @@ namespace UCI {
             if (!event || !event->actorDying)
                 return RE::BSEventNotifyControl::kContinue;
 
-            auto* dying = event->actorDying.get();
-            if (!dying)
-                return RE::BSEventNotifyControl::kContinue;
-
-            const auto deathTime = GetRealTime();
-            g_deathTimes.insert_or_assign(dying->GetFormID(), deathTime);
-
-            auto* killer = event->actorKiller.get();
-            if (killer && killer->IsPlayerRef()) {
-                g_playerKilled.insert_or_assign(dying->GetFormID(), deathTime);
-            }
+            State::RecordDeath(
+                event->actorDying->GetFormID(),
+                IsPlayerOrAlly(event->actorKiller.get()),
+                !event->dead);
             return RE::BSEventNotifyControl::kContinue;
         }
     };
@@ -84,21 +106,18 @@ namespace UCI {
             if (!event || !event->objectActivated || !event->actionRef)
                 return RE::BSEventNotifyControl::kContinue;
 
-            auto* activator = event->actionRef.get();
-            if (!activator || !activator->IsPlayerRef())
+            if (!event->actionRef->IsPlayerRef())
                 return RE::BSEventNotifyControl::kContinue;
 
-            auto* target = event->objectActivated.get();
-            if (!target) return RE::BSEventNotifyControl::kContinue;
-
-            auto* actor = target->As<RE::Actor>();
+            const auto* actor = event->objectActivated->As<RE::Actor>();
             if (actor && actor->IsDead())
-                MarkCorpseSearched(target->GetFormID());
+                State::MarkSearched(actor->GetFormID());
 
             return RE::BSEventNotifyControl::kContinue;
         }
     };
 
+    // Covers looting without activating the corpse, such as with QuickLoot.
     class ContainerChangedSink : public RE::BSTEventSink<RE::TESContainerChangedEvent> {
     public:
         static ContainerChangedSink* GetSingleton() {
@@ -117,35 +136,67 @@ namespace UCI {
             if (!player || event->newContainer != player->GetFormID())
                 return RE::BSEventNotifyControl::kContinue;
 
-            auto* source = RE::TESForm::LookupByID<RE::TESObjectREFR>(event->oldContainer);
-            if (!source)
-                return RE::BSEventNotifyControl::kContinue;
-
-            auto* actor = source->As<RE::Actor>();
+            const auto* actor = RE::TESForm::LookupByID<RE::Actor>(event->oldContainer);
             if (actor && actor->IsDead())
-                MarkCorpseSearched(source->GetFormID());
+                State::MarkSearched(actor->GetFormID());
 
             return RE::BSEventNotifyControl::kContinue;
         }
     };
 
+    // References created at runtime (FF form IDs) get deleted and their IDs reused, so drop what we
+    // know about one once it is gone. References from plugins keep their IDs, so they're left alone
+    // in case the event also fires when their cell is unloaded.
+    class FormDeleteSink : public RE::BSTEventSink<RE::TESFormDeleteEvent> {
+    public:
+        static FormDeleteSink* GetSingleton() {
+            static FormDeleteSink instance;
+            return &instance;
+        }
+
+        RE::BSEventNotifyControl ProcessEvent(
+            const RE::TESFormDeleteEvent* event,
+            RE::BSTEventSource<RE::TESFormDeleteEvent>*) override
+        {
+            if (event && (event->formID >> 24) == 0xFF)
+                State::Forget(event->formID);
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+
+    // A cell reset puts its references back as the plugin placed them. Corpses that start dead
+    // refill their inventory but never die again, so their searched mark has to be cleared here.
+    class ResetSink : public RE::BSTEventSink<RE::TESResetEvent> {
+    public:
+        static ResetSink* GetSingleton() {
+            static ResetSink instance;
+            return &instance;
+        }
+
+        RE::BSEventNotifyControl ProcessEvent(
+            const RE::TESResetEvent* event,
+            RE::BSTEventSource<RE::TESResetEvent>*) override
+        {
+            if (event && event->object)
+                State::Forget(event->object->GetFormID());
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
 }
 
 namespace UCI::Events {
     void Register() {
-        SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* msg) {
-            if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
-                auto* holder = RE::ScriptEventSourceHolder::GetSingleton();
-                holder->AddEventSink<RE::TESDeathEvent>(DeathSink::GetSingleton());
-                holder->AddEventSink<RE::TESActivateEvent>(ActivateSink::GetSingleton());
-                holder->AddEventSink<RE::TESContainerChangedEvent>(ContainerChangedSink::GetSingleton());
+        auto* holder = RE::ScriptEventSourceHolder::GetSingleton();
+        holder->AddEventSink<RE::TESDeathEvent>(DeathSink::GetSingleton());
+        holder->AddEventSink<RE::TESActivateEvent>(ActivateSink::GetSingleton());
+        holder->AddEventSink<RE::TESContainerChangedEvent>(ContainerChangedSink::GetSingleton());
+        holder->AddEventSink<RE::TESFormDeleteEvent>(FormDeleteSink::GetSingleton());
+        holder->AddEventSink<RE::TESResetEvent>(ResetSink::GetSingleton());
 
-                auto* input = RE::BSInputDeviceManager::GetSingleton();
-                if (input)
-                    input->AddEventSink(InputSink::GetSingleton());
+        auto* input = RE::BSInputDeviceManager::GetSingleton();
+        if (input)
+            input->AddEventSink(InputSink::GetSingleton());
 
-                REX::INFO("Event sinks registered (input: {})", input ? "yes" : "no");
-            }
-        });
+        REX::INFO("Event sinks registered (input: {})", input ? "yes" : "no");
     }
 }

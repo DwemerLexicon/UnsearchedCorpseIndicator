@@ -29,7 +29,9 @@ namespace SIF {
 
     constexpr uint32_t kMessage_GetAPI = 0xD111;
 
-    inline void ListenForRegistration(SKSE::MessagingInterface::EventCallback cb) {
-        SKSE::GetMessagingInterface()->RegisterListener("StatusIndicatorFramework", cb);
+    // Call at kPostLoad or later: SKSE refuses to register a listener for a plugin it hasn't loaded yet.
+    // Returns false when SIF isn't loaded.
+    inline bool ListenForRegistration(SKSE::MessagingInterface::EventCallback cb) {
+        return SKSE::GetMessagingInterface()->RegisterListener("StatusIndicatorFramework", cb);
     }
 }

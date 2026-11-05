@@ -11,6 +11,7 @@ namespace UCI::Settings {
     float delay{ 0.0f };
     bool allCorpses{ true };
     std::uint32_t toggleKey{ 38 };
+    std::uint32_t toggleModifier{ 0 };
 
     namespace {
         std::string Trim(std::string value) {
@@ -92,9 +93,14 @@ namespace UCI::Settings {
                 if (auto parsed = TryParseUInt32(val)) {
                     toggleKey = *parsed;
                 }
+            } else if (key == "iToggleModifier") {
+                if (auto parsed = TryParseUInt32(val)) {
+                    toggleModifier = *parsed;
+                }
             }
         }
 
-        REX::INFO("Settings: fDelay={}, bAllCorpses={}, iToggleKey={}", delay, allCorpses, toggleKey);
+        REX::INFO("Settings: fDelay={}, bAllCorpses={}, iToggleKey={}, iToggleModifier={}",
+            delay, allCorpses, toggleKey, toggleModifier);
     }
 }

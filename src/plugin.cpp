@@ -15,13 +15,32 @@ SKSE_PLUGIN_VERSION = [] {
     return v;
 }();
 
+namespace {
+    void OnSKSEMessage(SKSE::MessagingInterface::Message* a_msg) {
+        switch (a_msg->type) {
+        case SKSE::MessagingInterface::kPostLoad:
+            // Every plugin is loaded now, so SIF can be found whatever order SKSE loaded us in.
+            UCI::Conditions::Register();
+            break;
+        case SKSE::MessagingInterface::kDataLoaded:
+            UCI::Events::Register();
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 SKSE_PLUGIN_LOAD(const SKSE::LoadInterface* skse) {
     SKSE::Init(skse);
 
     UCI::Settings::Load();
-    UCI::Events::Register();
     UCI::Serialization::Install();
-    UCI::Conditions::Register();
+
+    if (!SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage)) {
+        REX::ERROR("Couldn't register for SKSE messages");
+        return false;
+    }
 
     return true;
 }

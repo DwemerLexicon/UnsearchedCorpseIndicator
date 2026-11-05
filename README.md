@@ -22,6 +22,7 @@ Navigate to `SKSE\Plugins\UnsearchedCorpsesIndicator.ini` to adjust the followin
 - `fDelay` - can be set to any positve number to delay how long after death the icon appears above the corpse.
 - `bAllCorpses` - Show icons on all dead NPCs, not just ones killed by you or followers (default: 1). 0 = player/follower kills only, 1 = all corpses
 - `iToggleKey` - DirectX scan code for toggling icons on/off (default: 38 = L)
+- `iToggleModifier` - DirectX scan code of a key that must be held with `iToggleKey`, e.g. 42 = Left Shift (default: 0 = none)
 
 If you navigate to `SKSE\Plugins\SIF\UnsearchedCorpsesIndicator.json`, you can also adjust the following:
 
