@@ -4,11 +4,15 @@
 
 # It's recommended to set a minimum CMake version.
 # If you use CMake features from higher versions, update this to match.
-cmake_minimum_required(VERSION 3.21...3.31)
+cmake_minimum_required(VERSION 3.25...3.31) # 3.25+ for FetchContent SYSTEM
 
 # [BEGIN set_project_name]
 # Set your project name. This will be the name of your SKSE .dll file.
-project(UnsearchedCorpsesIndicator VERSION 1.3.2 LANGUAGES CXX)
+project(UnsearchedCorpsesIndicator
+    VERSION 2.0.0
+    DESCRIPTION "Unsearched Corpse Indicator"
+    LANGUAGES CXX RC)
+set(PLUGIN_AUTHOR "DwemerLexicon")
 
 # [END set_project_name]
 
@@ -37,24 +41,43 @@ endif()
 # Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
 # set(OUTPUT_FOLDER "C:/path/to/any/folder")
 
-# Setup your SKSE plugin as an SKSE plugin!
-find_package(CommonLibSSE CONFIG REQUIRED)
+# powerof3's CommonLibSSE (GPL-3.0-or-later), built from source at a pinned commit; bump GIT_TAG
+# to update. It targets one runtime per build: SKYRIM_SUPPORT_AE ON = Skyrim AE (1.6.x/1.7.x).
+# Its vcpkg dependencies (commonlib-shared, spdlog) are listed in vcpkg.json.
+include(FetchContent)
+set(SKYRIM_SUPPORT_AE ON)
+FetchContent_Declare(
+    CommonLibSSE
+    GIT_REPOSITORY https://github.com/powerof3/CommonLibSSE.git
+    GIT_TAG 6cc7a5afb95ef86f60c2c38d91c137f2b5d0f668 # dev, 2026-11-05
+    SYSTEM
+)
+FetchContent_MakeAvailable(CommonLibSSE)
+
 find_package(jsoncpp CONFIG REQUIRED)
 
-add_commonlibsse_plugin(${PROJECT_NAME}
-    SOURCES
-        src/Conditions.cpp
-        src/Events.cpp
-        src/Serialization.cpp
-        src/Settings.cpp
-        src/State.cpp
-        src/plugin.cpp
-) # <--- specifies plugin.cpp
+configure_file(cmake/Plugin.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/Plugin.h" @ONLY)
+configure_file(cmake/version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc" @ONLY)
+
+add_library(${PROJECT_NAME} SHARED
+    src/Conditions.cpp
+    src/Events.cpp
+    src/Serialization.cpp
+    src/Settings.cpp
+    src/State.cpp
+    src/plugin.cpp
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
+)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23) # <--- use C++23 standard
 target_precompile_headers(${PROJECT_NAME} PRIVATE include/PCH.h) # <--- PCH.h is required!
 
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(${PROJECT_NAME} PRIVATE jsoncpp_static)
+target_compile_options(${PROJECT_NAME} PRIVATE /permissive- /W4 /Zc:preprocessor)
+target_compile_definitions(${PROJECT_NAME} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_link_libraries(${PROJECT_NAME} PRIVATE CommonLibSSE::CommonLibSSE jsoncpp_static)
 
 # When your SKSE .dll is compiled, this will automatically copy the .dll into your mods folder.
 # Only works if you configure DEPLOY_ROOT above (or set the SKYRIM_MODS_FOLDER environment variable)

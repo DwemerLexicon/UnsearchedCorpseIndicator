@@ -6,7 +6,7 @@
         "label": "Loot",
         "fadeMaxDistance": 1500,
         "fadeStartDistance": 1000,
-        "maxInstances": 20
+        "maxInstances": 48
       },
       "match": {
         "formType": "NPC",

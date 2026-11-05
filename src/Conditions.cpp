@@ -73,14 +73,19 @@ namespace UCI::Conditions {
             if (msg->type != SIF::kMessage_GetAPI) return;
 
             auto* api = static_cast<SIF::IAPI*>(msg->data);
-            if (!api) return;
+            if (!api) {
+                REX::ERROR("SIF sent an empty API pointer");
+                return;
+            }
 
-            api->RegisterCondition("hasLoot", [](const Json::Value&, RE::FormType) {
+            const bool hasLoot = api->RegisterCondition("hasLoot", [](const Json::Value&, RE::FormType) {
                 return std::make_unique<HasLootCondition>();
             });
-            api->RegisterCondition("notSearched", [](const Json::Value&, RE::FormType) {
+            const bool notSearched = api->RegisterCondition("notSearched", [](const Json::Value&, RE::FormType) {
                 return std::make_unique<NotSearchedCondition>();
             });
+            REX::INFO("SIF API v{}: hasLoot {}, notSearched {}", api->GetVersion(),
+                hasLoot ? "registered" : "FAILED", notSearched ? "registered" : "FAILED");
         });
     }
 }

@@ -143,6 +143,8 @@ namespace UCI::Events {
                 auto* input = RE::BSInputDeviceManager::GetSingleton();
                 if (input)
                     input->AddEventSink(InputSink::GetSingleton());
+
+                REX::INFO("Event sinks registered (input: {})", input ? "yes" : "no");
             }
         });
     }
