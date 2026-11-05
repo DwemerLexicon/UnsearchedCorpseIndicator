@@ -27,10 +27,18 @@ If you navigate to `SKSE\Plugins\SIF\UnsearchedCorpsesIndicator.json`, you can a
 
 - `"fadeMaxDistance": 1500` - The distance at which the icon fully disappears. Increase this value if you want icons to remain visible from farther away.
 - `"fadeStartDistance": 1000` - The distance at which the icon begins fading out. Icons are fully visible before this distance, then gradually fade until they reach fadeMaxDistance.
-- `"maxInstances": 20` - The maximum number of corpse icons that can be displayed at the same time. Increase this if you want more icons visible at once. Decrease it if you want to reduce screen clutter.
+- `"maxInstances": 48` - The maximum number of corpse icons that can be displayed at the same time (48 is also SIF's limit). Increase this if you want more icons visible at once. Decrease it if you want to reduce screen clutter.
 
 # Credits
 
 - JerryYOJ for Status Indicator Framework - please be sure to endorse over there.
 - SKSE team.
-- CommonLibSSE contributors.
+- powerof3 and the CommonLibSSE contributors.
+
+# License
+
+Copyright (C) 2026 DwemerLexicon
+
+Unsearched Corpse Indicator is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. See [LICENSE](LICENSE).
+
+Versions 1.3.2 and earlier were released under the MIT License.
