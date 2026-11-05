@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "Conditions.h"
+#include "Corpse.h"
 #include "SIF_API.h"
 #include "Settings.h"
 #include "State.h"
@@ -8,6 +9,10 @@
 
 namespace UCI {
     namespace {
+        // Seconds an ash pile has to exist before its icon shows, so the icon doesn't appear
+        // before the pile has finished forming on the ground.
+        constexpr float kAshPileDelay = 1.0f;
+
         bool MatchesCorpseScope(RE::FormID a_formID) {
             if (!Settings::allCorpses && !State::WasKilledByPlayer(a_formID)) {
                 return false;
@@ -37,23 +42,33 @@ namespace UCI {
         }
     }
 
+    // Both conditions are given either a dead actor (the NPC rule) or an ash pile (the Activator
+    // rule), and judge the corpse behind it.
     class HasLootCondition : public SIF::ICondition {
     public:
         bool Match(RE::TESObjectREFR* ref) const override {
             if (!ref || !State::IconsEnabled()) return false;
 
             // SIF checks hasLoot before isDead, so skip the inventory scan for the living.
-            const auto* actor = ref->As<RE::Actor>();
-            if (!actor || !actor->IsDead()) return false;
+            const auto corpse = Corpse::Get(ref);
+            if (!corpse || !corpse->IsDead()) return false;
 
-            return MatchesCorpseScope(ref->GetFormID()) && HasLootableItems(ref);
+            if (corpse.get() == ref) {
+                // Once the body has turned to ash, only the pile gets the icon.
+                if (Corpse::HasAshPile(corpse.get())) return false;
+            } else if (State::SecondsSinceFirstSeen(ref->GetFormID()) < kAshPileDelay) {
+                return false;
+            }
+
+            return MatchesCorpseScope(corpse->GetFormID()) && HasLootableItems(corpse.get());
         }
     };
 
     class NotSearchedCondition : public SIF::ICondition {
     public:
         bool Match(RE::TESObjectREFR* ref) const override {
-            return ref && !State::IsSearched(ref->GetFormID());
+            const auto corpse = Corpse::Get(ref);
+            return corpse && !State::IsSearched(corpse->GetFormID());
         }
     };
 }

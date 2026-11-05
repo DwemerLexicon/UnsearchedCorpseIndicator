@@ -13,6 +13,7 @@ namespace UCI::State {
         std::unordered_map<RE::FormID, float> deathTimes;
         std::unordered_set<RE::FormID> killedByPlayer;
         std::unordered_set<RE::FormID> searched;
+        std::unordered_map<RE::FormID, float> firstSeen;
         std::atomic<bool> iconsEnabled{ true };
     }
 
@@ -50,6 +51,7 @@ namespace UCI::State {
         searched.erase(a_formID);
         deathTimes.erase(a_formID);
         killedByPlayer.erase(a_formID);
+        firstSeen.erase(a_formID);
     }
 
     bool IsSearched(RE::FormID a_formID) {
@@ -69,6 +71,13 @@ namespace UCI::State {
             return std::nullopt;
         }
         return GetRealTime() - it->second;
+    }
+
+    float SecondsSinceFirstSeen(RE::FormID a_formID) {
+        const auto now = GetRealTime();
+        std::scoped_lock guard{ lock };
+        const auto [it, inserted] = firstSeen.try_emplace(a_formID, now);
+        return now - it->second;
     }
 
     bool IconsEnabled() {
@@ -101,6 +110,7 @@ namespace UCI::State {
             deathTimes.clear();
             killedByPlayer.clear();
             searched.clear();
+            firstSeen.clear();
         }
         iconsEnabled.store(true, std::memory_order_relaxed);
     }

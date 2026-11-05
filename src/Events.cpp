@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "Events.h"
+#include "Corpse.h"
 #include "Settings.h"
 #include "State.h"
 
@@ -109,9 +110,10 @@ namespace UCI {
             if (!event->actionRef->IsPlayerRef())
                 return RE::BSEventNotifyControl::kContinue;
 
-            const auto* actor = event->objectActivated->As<RE::Actor>();
-            if (actor && actor->IsDead())
-                State::MarkSearched(actor->GetFormID());
+            // The corpse itself or its ash pile.
+            const auto corpse = Corpse::Get(event->objectActivated.get());
+            if (corpse && corpse->IsDead())
+                State::MarkSearched(corpse->GetFormID());
 
             return RE::BSEventNotifyControl::kContinue;
         }
@@ -136,9 +138,9 @@ namespace UCI {
             if (!player || event->newContainer != player->GetFormID())
                 return RE::BSEventNotifyControl::kContinue;
 
-            const auto* actor = RE::TESForm::LookupByID<RE::Actor>(event->oldContainer);
-            if (actor && actor->IsDead())
-                State::MarkSearched(actor->GetFormID());
+            const auto corpse = Corpse::Get(RE::TESForm::LookupByID<RE::TESObjectREFR>(event->oldContainer));
+            if (corpse && corpse->IsDead())
+                State::MarkSearched(corpse->GetFormID());
 
             return RE::BSEventNotifyControl::kContinue;
         }

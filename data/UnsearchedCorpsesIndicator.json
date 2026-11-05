@@ -14,6 +14,20 @@
         "notSearched": true,
         "hasLoot": true
       }
+    },
+    {
+      "icon": {
+        "source": "UnsearchedCorpsesIndicator/indicator.swf",
+        "label": "Loot",
+        "fadeMaxDistance": 1500,
+        "fadeStartDistance": 1000,
+        "maxInstances": 48
+      },
+      "match": {
+        "formType": "Activator",
+        "notSearched": true,
+        "hasLoot": true
+      }
     }
   ]
 }

@@ -20,6 +20,8 @@ namespace UCI::State {
     [[nodiscard]] bool WasKilledByPlayer(RE::FormID a_formID);
     // Empty when the death happened before this session (for example in a loaded save).
     [[nodiscard]] std::optional<float> SecondsSinceDeath(RE::FormID a_formID);
+    // Seconds since this was first called for the reference this session; the first call returns 0.
+    [[nodiscard]] float SecondsSinceFirstSeen(RE::FormID a_formID);
 
     [[nodiscard]] bool IconsEnabled();
     void ToggleIcons();
