@@ -42,14 +42,14 @@ namespace UCI {
         }
     }
 
-    // Both conditions are given either a dead actor (the NPC rule) or an ash pile (the Activator
-    // rule), and judge the corpse behind it.
+    // The rule has no formType, so SIF asks about every actor, door, container and activator it
+    // tracks. Both conditions judge the corpse behind a body or an ash pile and reject the rest.
+    // SIF checks hasLoot first, so it turns everything else away cheaply.
     class HasLootCondition : public SIF::ICondition {
     public:
         bool Match(RE::TESObjectREFR* ref) const override {
             if (!ref || !State::IconsEnabled()) return false;
 
-            // SIF checks hasLoot before isDead, so skip the inventory scan for the living.
             const auto corpse = Corpse::Get(ref);
             if (!corpse || !corpse->IsDead()) return false;
 

@@ -1,6 +1,7 @@
 # Features
 
 - Shows an icon above the corpses of dead NPCs that you have not searched.
+- Also shows on ash piles and ghost remains, such as those left by ghosts, ice wraiths, Ash Spawn and Disintegrate.
 - Can be configured to show for all corpses, or only those killed by you or a follower. By default, the unsearched icon shows for all  corpses.
 - Can be set to show immediately upon death, or set to a custom delay.
 - Icon automatically disappears once you search the body, even if you leave items behind.
@@ -29,6 +30,12 @@ If you navigate to `SKSE\Plugins\SIF\UnsearchedCorpsesIndicator.json`, you can a
 - `"fadeMaxDistance": 1500` - The distance at which the icon fully disappears. Increase this value if you want icons to remain visible from farther away.
 - `"fadeStartDistance": 1000` - The distance at which the icon begins fading out. Icons are fully visible before this distance, then gradually fade until they reach fadeMaxDistance.
 - `"maxInstances": 48` - The maximum number of corpse icons that can be displayed at the same time (48 is also SIF's limit). Increase this if you want more icons visible at once. Decrease it if you want to reduce screen clutter.
+- `"scale": 1.0` - The icon's size. For example, 0.6 makes it smaller and 1.5 makes it larger.
+- `"opacity": 100` - How solid the icon is, from 0 (invisible) to 100. Lower it for a subtler icon. It still fades out with distance.
+- `"fixedSize": false` - Set to true to keep the icon the same size at any distance instead of shrinking as it gets farther away.
+- `"color"` - Not included by default. Add a line like `"color": "#FF4444",` to tint the icon. The colour is multiplied with the icon, so `"#FFFFFF"` leaves it unchanged.
+
+`scale`, `opacity`, `fixedSize` and `color` need a version of SIF that supports them.
 
 # Credits
 

@@ -6,27 +6,14 @@
         "label": "Loot",
         "fadeMaxDistance": 1500,
         "fadeStartDistance": 1000,
-        "maxInstances": 48
+        "maxInstances": 48,
+        "scale": 1.0,
+        "opacity": 100,
+        "fixedSize": false
       },
       "match": {
-        "formType": "NPC",
-        "isDead": true,
-        "notSearched": true,
-        "hasLoot": true
-      }
-    },
-    {
-      "icon": {
-        "source": "UnsearchedCorpsesIndicator/indicator.swf",
-        "label": "Loot",
-        "fadeMaxDistance": 1500,
-        "fadeStartDistance": 1000,
-        "maxInstances": 48
-      },
-      "match": {
-        "formType": "Activator",
-        "notSearched": true,
-        "hasLoot": true
+        "hasLoot": true,
+        "notSearched": true
       }
     }
   ]
