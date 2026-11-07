@@ -1,12 +1,24 @@
-#include "PCH.h"
 #include "Events.h"
+
+#include <algorithm>
+#include <cctype>
+#include <string_view>
+#include <vector>
+
 #include "Corpse.h"
+#include "IconMenu.h"
+#include "PCH.h"
+#include "Plugin.h"
 #include "Settings.h"
 #include "State.h"
 
+// QuickLoot IE API header (MIT) from github.com/MissCorruption/QuickLootIE, needs Windows.h
+#include <Windows.h>
+
+#include "QuickLootAPI.h"
+
 namespace UCI {
     namespace {
-        // The player, a follower, or something the player commands (summons, reanimated thralls).
         bool IsPlayerOrAlly(RE::TESObjectREFR* a_killer) {
             if (!a_killer) return false;
             if (a_killer->IsPlayerRef()) return true;
@@ -19,10 +31,43 @@ namespace UCI {
             return commander && commander->IsPlayerRef();
         }
 
-        // Typing in the console or a menu shouldn't toggle the icons.
         bool IsInMenu() {
             auto* ui = RE::UI::GetSingleton();
             return !ui || ui->GameIsPaused() || ui->IsMenuOpen(RE::Console::MENU_NAME);
+        }
+
+        bool ContainsNoCase(std::string_view a_text, std::string_view a_word) {
+            const auto lower = [](unsigned char a_char) { return std::tolower(a_char); };
+            return !std::ranges::search(a_text, a_word, {}, lower, lower).empty();
+        }
+
+        // e.g. magicAttachAshPileOnDeath, DLC2AshSpawnDisintegrateDeathFX
+        bool HasAshDeathScript(RE::Actor* a_actor) {
+            auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+            auto* target = a_actor ? a_actor->GetMagicTarget() : nullptr;
+            auto* effects = target ? target->GetActiveEffectList() : nullptr;
+            if (!vm || !effects) return false;
+
+            std::vector<RE::VMHandle> handles;
+            for (auto* effect : *effects) {
+                if (effect)
+                    handles.push_back(
+                        vm->GetObjectHandlePolicy()->GetHandleForObject(RE::ActiveEffect::VMTYPEID, effect));
+            }
+
+            RE::BSSpinLockGuard guard(vm->attachedScriptsLock);
+            for (const auto handle : handles) {
+                const auto it = vm->attachedScripts.find(handle);
+                if (it == vm->attachedScripts.end()) continue;
+                for (auto& script : it->second) {
+                    const auto object = script.get();
+                    const auto type = object ? object->GetTypeInfo() : nullptr;
+                    if (!type) continue;
+                    const std::string_view name = type->GetName();
+                    if (ContainsNoCase(name, "AshPile") || ContainsNoCase(name, "Disintegrate")) return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -33,20 +78,16 @@ namespace UCI {
             return &instance;
         }
 
-        RE::BSEventNotifyControl ProcessEvent(
-            RE::InputEvent* const* events,
-            RE::BSTEventSource<RE::InputEvent*>*) override
-        {
+        RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* events,
+                                              RE::BSTEventSource<RE::InputEvent*>*) override {
             if (!events || Settings::toggleKey == RE::BSKeyboardDevice::Keys::kNone)
                 return RE::BSEventNotifyControl::kContinue;
 
             for (auto* event = *events; event; event = event->next) {
-                if (event->GetDevice() != RE::INPUT_DEVICE::kKeyboard)
-                    continue;
+                if (event->GetDevice() != RE::INPUT_DEVICE::kKeyboard) continue;
 
                 const auto* button = event->AsButtonEvent();
-                if (!button)
-                    continue;
+                if (!button) continue;
 
                 const auto key = button->GetIDCode();
                 if (Settings::toggleModifier != 0 && key == Settings::toggleModifier) {
@@ -54,12 +95,9 @@ namespace UCI {
                     continue;
                 }
 
-                if (key != Settings::toggleKey || !button->IsDown())
-                    continue;
-                if (Settings::toggleModifier != 0 && !_modifierHeld)
-                    continue;
-                if (IsInMenu())
-                    continue;
+                if (key != Settings::toggleKey || !button->IsDown()) continue;
+                if (Settings::toggleModifier != 0 && !_modifierHeld) continue;
+                if (IsInMenu()) continue;
 
                 State::ToggleIcons();
             }
@@ -68,7 +106,7 @@ namespace UCI {
         }
 
     private:
-        bool _modifierHeld{ false };
+        bool _modifierHeld{false};
     };
 
     class DeathSink : public RE::BSTEventSink<RE::TESDeathEvent> {
@@ -78,17 +116,16 @@ namespace UCI {
             return &instance;
         }
 
-        RE::BSEventNotifyControl ProcessEvent(
-            const RE::TESDeathEvent* event,
-            RE::BSTEventSource<RE::TESDeathEvent>*) override
-        {
-            if (!event || !event->actorDying)
-                return RE::BSEventNotifyControl::kContinue;
+        RE::BSEventNotifyControl ProcessEvent(const RE::TESDeathEvent* event,
+                                              RE::BSTEventSource<RE::TESDeathEvent>*) override {
+            if (!event || !event->actorDying) return RE::BSEventNotifyControl::kContinue;
 
-            State::RecordDeath(
-                event->actorDying->GetFormID(),
-                IsPlayerOrAlly(event->actorKiller.get()),
-                !event->dead);
+            const auto formID = event->actorDying->GetFormID();
+            const bool dying = !event->dead;
+            State::RecordDeath(formID, IsPlayerOrAlly(event->actorKiller.get()), dying);
+
+            // effects are still on the actor while it's dying, gone once it's dead
+            if (dying && HasAshDeathScript(event->actorDying->As<RE::Actor>())) State::MarkWillTurnToAsh(formID);
             return RE::BSEventNotifyControl::kContinue;
         }
     };
@@ -100,26 +137,20 @@ namespace UCI {
             return &instance;
         }
 
-        RE::BSEventNotifyControl ProcessEvent(
-            const RE::TESActivateEvent* event,
-            RE::BSTEventSource<RE::TESActivateEvent>*) override
-        {
-            if (!event || !event->objectActivated || !event->actionRef)
-                return RE::BSEventNotifyControl::kContinue;
+        RE::BSEventNotifyControl ProcessEvent(const RE::TESActivateEvent* event,
+                                              RE::BSTEventSource<RE::TESActivateEvent>*) override {
+            if (!event || !event->objectActivated || !event->actionRef) return RE::BSEventNotifyControl::kContinue;
 
-            if (!event->actionRef->IsPlayerRef())
-                return RE::BSEventNotifyControl::kContinue;
+            if (!event->actionRef->IsPlayerRef()) return RE::BSEventNotifyControl::kContinue;
 
-            // The corpse itself or its ash pile.
             const auto corpse = Corpse::Get(event->objectActivated.get());
-            if (corpse && corpse->IsDead())
-                State::MarkSearched(corpse->GetFormID());
+            if (corpse && corpse->IsDead()) State::MarkSearched(corpse->GetFormID());
 
             return RE::BSEventNotifyControl::kContinue;
         }
     };
 
-    // Covers looting without activating the corpse, such as with QuickLoot.
+    // looting without activating, e.g. QuickLoot
     class ContainerChangedSink : public RE::BSTEventSink<RE::TESContainerChangedEvent> {
     public:
         static ContainerChangedSink* GetSingleton() {
@@ -127,28 +158,28 @@ namespace UCI {
             return &instance;
         }
 
-        RE::BSEventNotifyControl ProcessEvent(
-            const RE::TESContainerChangedEvent* event,
-            RE::BSTEventSource<RE::TESContainerChangedEvent>*) override
-        {
-            if (!event || event->itemCount <= 0)
-                return RE::BSEventNotifyControl::kContinue;
+        RE::BSEventNotifyControl ProcessEvent(const RE::TESContainerChangedEvent* event,
+                                              RE::BSTEventSource<RE::TESContainerChangedEvent>*) override {
+            if (!event || event->itemCount <= 0) return RE::BSEventNotifyControl::kContinue;
 
             auto* player = RE::PlayerCharacter::GetSingleton();
-            if (!player || event->newContainer != player->GetFormID())
-                return RE::BSEventNotifyControl::kContinue;
+            if (!player || event->newContainer != player->GetFormID()) return RE::BSEventNotifyControl::kContinue;
 
             const auto corpse = Corpse::Get(RE::TESForm::LookupByID<RE::TESObjectREFR>(event->oldContainer));
-            if (corpse && corpse->IsDead())
-                State::MarkSearched(corpse->GetFormID());
+            if (corpse && corpse->IsDead()) State::MarkSearched(corpse->GetFormID());
 
             return RE::BSEventNotifyControl::kContinue;
         }
     };
 
-    // References created at runtime (FF form IDs) get deleted and their IDs reused, so drop what we
-    // know about one once it is gone. References from plugins keep their IDs, so they're left alone
-    // in case the event also fires when their cell is unloaded.
+    void OnQuickLootTakeItem(QuickLoot::API::TakeItemEvent* a_event) {
+        if (!a_event || !a_event->actor || !a_event->actor->IsPlayerRef()) return;
+
+        const auto corpse = Corpse::Get(a_event->container.get().get());
+        if (corpse && corpse->IsDead()) State::MarkSearched(corpse->GetFormID());
+    }
+
+    // FF form IDs get reused after deletion. Plugin refs are left alone in case this fires on cell unload.
     class FormDeleteSink : public RE::BSTEventSink<RE::TESFormDeleteEvent> {
     public:
         static FormDeleteSink* GetSingleton() {
@@ -156,18 +187,14 @@ namespace UCI {
             return &instance;
         }
 
-        RE::BSEventNotifyControl ProcessEvent(
-            const RE::TESFormDeleteEvent* event,
-            RE::BSTEventSource<RE::TESFormDeleteEvent>*) override
-        {
-            if (event && (event->formID >> 24) == 0xFF)
-                State::Forget(event->formID);
+        RE::BSEventNotifyControl ProcessEvent(const RE::TESFormDeleteEvent* event,
+                                              RE::BSTEventSource<RE::TESFormDeleteEvent>*) override {
+            if (event && (event->formID >> 24) == 0xFF) State::Forget(event->formID);
             return RE::BSEventNotifyControl::kContinue;
         }
     };
 
-    // A cell reset puts its references back as the plugin placed them. Corpses that start dead
-    // refill their inventory but never die again, so their searched mark has to be cleared here.
+    // corpses that start dead refill on cell reset but never die again
     class ResetSink : public RE::BSTEventSink<RE::TESResetEvent> {
     public:
         static ResetSink* GetSingleton() {
@@ -175,12 +202,24 @@ namespace UCI {
             return &instance;
         }
 
-        RE::BSEventNotifyControl ProcessEvent(
-            const RE::TESResetEvent* event,
-            RE::BSTEventSource<RE::TESResetEvent>*) override
-        {
-            if (event && event->object)
-                State::Forget(event->object->GetFormID());
+        RE::BSEventNotifyControl ProcessEvent(const RE::TESResetEvent* event,
+                                              RE::BSTEventSource<RE::TESResetEvent>*) override {
+            if (event && event->object) State::Forget(event->object->GetFormID());
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+
+    // kNewGame/kPostLoadGame aren't sent for coc from the main menu, the loading screen always closes
+    class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent> {
+    public:
+        static MenuSink* GetSingleton() {
+            static MenuSink instance;
+            return &instance;
+        }
+
+        RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* event,
+                                              RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override {
+            if (event && !event->opening && event->menuName == RE::LoadingMenu::MENU_NAME) IconMenu::Show();
             return RE::BSEventNotifyControl::kContinue;
         }
     };
@@ -195,10 +234,16 @@ namespace UCI::Events {
         holder->AddEventSink<RE::TESFormDeleteEvent>(FormDeleteSink::GetSingleton());
         holder->AddEventSink<RE::TESResetEvent>(ResetSink::GetSingleton());
 
-        auto* input = RE::BSInputDeviceManager::GetSingleton();
-        if (input)
-            input->AddEventSink(InputSink::GetSingleton());
+        RE::UI::GetSingleton()->AddEventSink<RE::MenuOpenCloseEvent>(MenuSink::GetSingleton());
 
-        REX::INFO("Event sinks registered (input: {})", input ? "yes" : "no");
+        auto* input = RE::BSInputDeviceManager::GetSingleton();
+        if (input) input->AddEventSink(InputSink::GetSingleton());
+
+        const bool quickLoot =
+            QuickLoot::API::QuickLootAPI::Init(Plugin::NAME.data(), QuickLoot::API::ApiVersion::kV20);
+        if (quickLoot) QuickLoot::API::QuickLootAPI::RegisterTakeItemHandler(OnQuickLootTakeItem);
+
+        SKSE::log::info("Event sinks registered (input: {}, QuickLoot IE: {})", input ? "yes" : "no",
+                        quickLoot ? "yes" : "no");
     }
 }

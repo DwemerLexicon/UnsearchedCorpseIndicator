@@ -1,5 +1,5 @@
 #pragma once
 
 namespace UCI::Conditions {
-    void Register();
+    [[nodiscard]] bool ShowIcon(RE::TESObjectREFR* a_ref);
 }

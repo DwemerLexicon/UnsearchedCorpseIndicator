@@ -14,6 +14,7 @@ namespace UCI::State {
         std::unordered_set<RE::FormID> killedByPlayer;
         std::unordered_set<RE::FormID> searched;
         std::unordered_map<RE::FormID, float> firstSeen;
+        std::unordered_set<RE::FormID> willTurnToAsh;
         std::atomic<bool> iconsEnabled{ true };
     }
 
@@ -29,6 +30,7 @@ namespace UCI::State {
         if (a_dying) {
             searched.erase(a_formID);
             killedByPlayer.erase(a_formID);
+            willTurnToAsh.erase(a_formID);
             deathTimes.insert_or_assign(a_formID, now);
         } else {
             deathTimes.try_emplace(a_formID, now);
@@ -46,12 +48,18 @@ namespace UCI::State {
         killedByPlayer.erase(a_formID);
     }
 
+    void MarkWillTurnToAsh(RE::FormID a_formID) {
+        std::scoped_lock guard{ lock };
+        willTurnToAsh.insert(a_formID);
+    }
+
     void Forget(RE::FormID a_formID) {
         std::scoped_lock guard{ lock };
         searched.erase(a_formID);
         deathTimes.erase(a_formID);
         killedByPlayer.erase(a_formID);
         firstSeen.erase(a_formID);
+        willTurnToAsh.erase(a_formID);
     }
 
     bool IsSearched(RE::FormID a_formID) {
@@ -62,6 +70,11 @@ namespace UCI::State {
     bool WasKilledByPlayer(RE::FormID a_formID) {
         std::scoped_lock guard{ lock };
         return killedByPlayer.contains(a_formID);
+    }
+
+    bool WillTurnToAsh(RE::FormID a_formID) {
+        std::scoped_lock guard{ lock };
+        return willTurnToAsh.contains(a_formID);
     }
 
     std::optional<float> SecondsSinceDeath(RE::FormID a_formID) {
@@ -111,6 +124,7 @@ namespace UCI::State {
             killedByPlayer.clear();
             searched.clear();
             firstSeen.clear();
+            willTurnToAsh.clear();
         }
         iconsEnabled.store(true, std::memory_order_relaxed);
     }

@@ -1,17 +1,23 @@
-#include "PCH.h"
 #include "Conditions.h"
-#include "Corpse.h"
-#include "SIF_API.h"
-#include "Settings.h"
-#include "State.h"
 
 #include <algorithm>
 
+#include "Corpse.h"
+#include "PCH.h"
+#include "Settings.h"
+#include "State.h"
+
 namespace UCI {
     namespace {
-        // Seconds an ash pile has to exist before its icon shows, so the icon doesn't appear
-        // before the pile has finished forming on the ground.
-        constexpr float kAshPileDelay = 1.0f;
+        constexpr float kAshPileDelay = 1.0f;    // let the pile form first
+        constexpr float kBodyDelay = 1.0f;       // stops the icon popping up the instant something dies
+        constexpr float kAshPileTimeout = 5.0f;  // ash spawn piles show up late, give up waiting after this
+
+        bool IsTurningToAsh(const RE::Actor* a_actor) {
+            const auto stage = a_actor->GetActorRuntimeData().criticalStage.get();
+            return stage == RE::ACTOR_CRITICAL_STAGE::kDisintegrateStart ||
+                   stage == RE::ACTOR_CRITICAL_STAGE::kDisintegrateEnd;
+        }
 
         bool MatchesCorpseScope(RE::FormID a_formID) {
             if (!Settings::allCorpses && !State::WasKilledByPlayer(a_formID)) {
@@ -28,74 +34,35 @@ namespace UCI {
             return true;
         }
 
-        // Anything the player would see when searching the corpse. GetInventory() adds base
-        // container items to what was added or removed since, so items the actor always carries
-        // count too, and items already taken don't.
+        // GetInventory includes base container items so default gear counts too
         bool HasLootableItems(RE::TESObjectREFR* a_ref) {
             const auto inventory = a_ref->GetInventory([](RE::TESBoundObject& a_object) {
                 return a_object.GetPlayable() && !a_object.Is(RE::FormType::LeveledItem);
             });
 
-            return std::ranges::any_of(inventory, [](const auto& a_item) {
-                return a_item.second.first > 0;
-            });
+            return std::ranges::any_of(inventory, [](const auto& a_item) { return a_item.second.first > 0; });
         }
     }
-
-    // The rule has no formType, so SIF asks about every actor, door, container and activator it
-    // tracks. Both conditions judge the corpse behind a body or an ash pile and reject the rest.
-    // SIF checks hasLoot first, so it turns everything else away cheaply.
-    class HasLootCondition : public SIF::ICondition {
-    public:
-        bool Match(RE::TESObjectREFR* ref) const override {
-            if (!ref || !State::IconsEnabled()) return false;
-
-            const auto corpse = Corpse::Get(ref);
-            if (!corpse || !corpse->IsDead()) return false;
-
-            if (corpse.get() == ref) {
-                // Once the body has turned to ash, only the pile gets the icon.
-                if (Corpse::HasAshPile(corpse.get())) return false;
-            } else if (State::SecondsSinceFirstSeen(ref->GetFormID()) < kAshPileDelay) {
-                return false;
-            }
-
-            return MatchesCorpseScope(corpse->GetFormID()) && HasLootableItems(corpse.get());
-        }
-    };
-
-    class NotSearchedCondition : public SIF::ICondition {
-    public:
-        bool Match(RE::TESObjectREFR* ref) const override {
-            const auto corpse = Corpse::Get(ref);
-            return corpse && !State::IsSearched(corpse->GetFormID());
-        }
-    };
 }
 
 namespace UCI::Conditions {
-    void Register() {
-        const bool listening = SIF::ListenForRegistration([](SKSE::MessagingInterface::Message* msg) {
-            if (msg->type != SIF::kMessage_GetAPI) return;
+    bool ShowIcon(RE::TESObjectREFR* a_ref) {
+        const auto corpse = Corpse::Get(a_ref);
+        if (!corpse || !corpse->IsDead()) return false;
 
-            auto* api = static_cast<SIF::IAPI*>(msg->data);
-            if (!api) {
-                REX::ERROR("SIF sent an empty API pointer");
-                return;
+        const auto formID = corpse->GetFormID();
+        if (corpse.get() == a_ref) {
+            if (Corpse::HasAshPile(corpse.get()) || IsTurningToAsh(corpse.get())) return false;
+
+            // no death time if it died before this session, just show it
+            if (const auto sinceDeath = State::SecondsSinceDeath(formID)) {
+                if (*sinceDeath < kBodyDelay) return false;
+                if (*sinceDeath < kAshPileTimeout && State::WillTurnToAsh(formID)) return false;
             }
-
-            const bool hasLoot = api->RegisterCondition("hasLoot", [](const Json::Value&, RE::FormType) {
-                return std::make_unique<HasLootCondition>();
-            });
-            const bool notSearched = api->RegisterCondition("notSearched", [](const Json::Value&, RE::FormType) {
-                return std::make_unique<NotSearchedCondition>();
-            });
-            REX::INFO("SIF API v{}: hasLoot {}, notSearched {}", api->GetVersion(),
-                hasLoot ? "registered" : "FAILED", notSearched ? "registered" : "FAILED");
-        });
-
-        if (!listening) {
-            REX::ERROR("Status Indicator Framework is not loaded, so no corpse icons will show");
+        } else if (State::SecondsSinceFirstSeen(a_ref->GetFormID()) < kAshPileDelay) {
+            return false;
         }
+
+        return !State::IsSearched(formID) && MatchesCorpseScope(formID) && HasLootableItems(corpse.get());
     }
 }

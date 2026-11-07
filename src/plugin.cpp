@@ -1,29 +1,24 @@
 #include "PCH.h"
-#include "Conditions.h"
 #include "Events.h"
+#include "IconMenu.h"
 #include "Plugin.h"
 #include "Serialization.h"
 #include "Settings.h"
 
-SKSE_PLUGIN_VERSION = [] {
-    SKSE::PluginVersionData v;
-    v.PluginVersion(UCI::Plugin::VERSION);
-    v.PluginName(UCI::Plugin::NAME);
-    v.AuthorName(UCI::Plugin::AUTHOR);
-    v.UsesAddressLibrary();
-    v.UsesUpdatedStructs();
-    return v;
-}();
+// also does SKSEPlugin_Query for 1.5.97
+SKSEPluginInfo(
+    .Version = UCI::Plugin::VERSION,
+    .Name = UCI::Plugin::NAME,
+    .Author = UCI::Plugin::AUTHOR,
+    .StructCompatibility = SKSE::StructCompatibility::Independent,
+    .RuntimeCompatibility = SKSE::VersionIndependence::AddressLibrary)
 
 namespace {
     void OnSKSEMessage(SKSE::MessagingInterface::Message* a_msg) {
         switch (a_msg->type) {
-        case SKSE::MessagingInterface::kPostLoad:
-            // Every plugin is loaded now, so SIF can be found whatever order SKSE loaded us in.
-            UCI::Conditions::Register();
-            break;
         case SKSE::MessagingInterface::kDataLoaded:
             UCI::Events::Register();
+            UCI::IconMenu::Register();
             break;
         default:
             break;
@@ -38,7 +33,7 @@ SKSE_PLUGIN_LOAD(const SKSE::LoadInterface* skse) {
     UCI::Serialization::Install();
 
     if (!SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage)) {
-        REX::ERROR("Couldn't register for SKSE messages");
+        SKSE::log::error("Couldn't register for SKSE messages");
         return false;
     }
 

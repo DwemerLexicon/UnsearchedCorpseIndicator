@@ -41,20 +41,19 @@ endif()
 # Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
 # set(OUTPUT_FOLDER "C:/path/to/any/folder")
 
-# powerof3's CommonLibSSE (GPL-3.0-or-later), built from source at a pinned commit; bump GIT_TAG
-# to update. It targets one runtime per build: SKYRIM_SUPPORT_AE ON = Skyrim AE (1.6.x/1.7.x).
-# Its vcpkg dependencies (commonlib-shared, spdlog) are listed in vcpkg.json.
+# CommonLibSSE-NG 15.7.0, one DLL for SE and AE. No VR, no VR camera addresses.
 include(FetchContent)
-set(SKYRIM_SUPPORT_AE ON)
+set(ENABLE_SKYRIM_SE ON CACHE BOOL "" FORCE)
+set(ENABLE_SKYRIM_AE ON CACHE BOOL "" FORCE)
+set(ENABLE_SKYRIM_VR OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     CommonLibSSE
-    GIT_REPOSITORY https://github.com/powerof3/CommonLibSSE.git
-    GIT_TAG 6cc7a5afb95ef86f60c2c38d91c137f2b5d0f668 # dev, 2026-11-05
+    GIT_REPOSITORY https://github.com/alandtse/CommonLibVR.git
+    GIT_TAG cd21580f7e7cab47df0a7e0fa5e26525527b36bf # ng, release 15.7.0
     SYSTEM
 )
 FetchContent_MakeAvailable(CommonLibSSE)
-
-find_package(jsoncpp CONFIG REQUIRED)
 
 configure_file(cmake/Plugin.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/Plugin.h" @ONLY)
 configure_file(cmake/version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc" @ONLY)
@@ -62,6 +61,7 @@ configure_file(cmake/version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/generated/versio
 add_library(${PROJECT_NAME} SHARED
     src/Conditions.cpp
     src/Events.cpp
+    src/IconMenu.cpp
     src/Serialization.cpp
     src/Settings.cpp
     src/State.cpp
@@ -77,7 +77,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX 
 target_include_directories(${PROJECT_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(${PROJECT_NAME} PRIVATE CommonLibSSE::CommonLibSSE jsoncpp_static)
+target_link_libraries(${PROJECT_NAME} PRIVATE CommonLibSSE::CommonLibSSE)
 
 # When your SKSE .dll is compiled, this will automatically copy the .dll into your mods folder.
 # Only works if you configure DEPLOY_ROOT above (or set the SKYRIM_MODS_FOLDER environment variable)
@@ -107,6 +107,7 @@ if(DEFINED OUTPUT_FOLDER)
         )
     endif()
 
+    # empty SIF rule to replace the 1.x one
     add_custom_command(
         TARGET "${PROJECT_NAME}"
         POST_BUILD

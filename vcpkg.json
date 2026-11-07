@@ -1,13 +1,8 @@
 {
     "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-    "$comment": "commonlib-shared and spdlog are required by powerof3's CommonLibSSE, which CMakeLists.txt fetches from source. commonlib-shared comes from the overlay port in cmake/ports.",
     "dependencies": [
-        "commonlib-shared",
-        "jsoncpp",
-        {
-            "name": "spdlog",
-            "default-features": false,
-            "features": [ "wchar" ]
-        }
+        "directxtk",
+        "rapidcsv",
+        "spdlog"
     ]
 }

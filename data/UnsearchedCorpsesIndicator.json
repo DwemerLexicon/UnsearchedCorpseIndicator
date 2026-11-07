@@ -1,20 +1,4 @@
 {
-  "rules": [
-    {
-      "icon": {
-        "source": "UnsearchedCorpsesIndicator/indicator.swf",
-        "label": "Loot",
-        "fadeMaxDistance": 1500,
-        "fadeStartDistance": 1000,
-        "maxInstances": 48,
-        "scale": 1.0,
-        "opacity": 100,
-        "fixedSize": false
-      },
-      "match": {
-        "hasLoot": true,
-        "notSearched": true
-      }
-    }
-  ]
+  "$comment": "Empty on purpose. Unsearched Corpse Indicator 2.0.0 and later draw their own icon. This file replaces the Status Indicator Framework rule that older versions installed here, so SIF doesn't draw a second icon.",
+  "rules": []
 }

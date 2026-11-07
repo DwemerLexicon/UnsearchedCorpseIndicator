@@ -16,9 +16,7 @@ namespace UCI::Serialization {
         constexpr std::uint32_t kKilledByPlayerRecord = FourCC('P', 'K', 'I', 'L');  // added in 2.0.0
         constexpr std::uint32_t kRecordVersion = 1;
 
-        // Layout: count, then that many form IDs. Not pruned against LookupByID(): corpses in
-        // unloaded cells aren't in memory but still need their marks; deleted references are
-        // already dropped by the form delete event.
+        // count then form IDs. Not pruned, corpses in unloaded cells still need their marks
         void WriteFormIDs(SKSE::SerializationInterface* a_intfc, std::uint32_t a_type, const std::vector<RE::FormID>& a_formIDs) {
             if (!a_intfc->OpenRecord(a_type, kRecordVersion)) return;
             if (!a_intfc->WriteRecordData(static_cast<std::uint32_t>(a_formIDs.size()))) return;
